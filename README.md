@@ -25,6 +25,8 @@ Camera access only works on `https://` pages (GitHub Pages qualifies) or `http:/
 
 **No camera?** Choose *Play with mouse or touch*. Player 1 taps the left side and Player 2 the right. Multi-touch works, so two people can tap at once on a tablet.
 
+**On a phone held upright** the touch game splits the screen top and bottom instead: Player 1 plays the top half and Player 2 the bottom, so each gets a usable area. Turn the phone sideways to get the left/right split back. Camera play always splits left/right, since the players stand side by side.
+
 **Solo practice** removes the barrier and the clock (still one finger). One cake, five slices, and a saved best score.
 
 ## The ant heads

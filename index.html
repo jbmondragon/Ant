@@ -185,8 +185,17 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
   .verdict.pop { animation: none; }
   .side, .chip { transition: none; }
 }
+/* touch: no double-tap zoom, grey tap flash, or text selection on long press */
+button, .seg label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+#stage { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 @media (max-width: 480px) {
-  .seg label { padding: 8px 12px; }
+  .overlay { padding: 16px; }
+  .seg { display: flex; }
+  .seg label { flex: 1 1 auto; justify-content: center; text-align: center; padding: 8px 8px; font-size: .95rem; line-height: 1.2; }
+  .actions .btn { flex: 1 1 100%; }
+  .cast .pic { width: 42px; height: 42px; }
+  h1 { gap: 10px; }
+  #pill { font-size: .92rem; padding: 8px 14px; }
   .card { padding: 22px 18px 20px; }
   .chip .value { font-size: 1.5rem; }
   .chip { padding: 3px 12px 5px; }
@@ -423,14 +432,21 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
   // ---------- geometry helpers ----------
   const versus = () => players === 2;
   const barrierHalf = () => BARRIER * U / 2;
-  // Is x on the given player's side of the barrier (not on the barrier itself)?
-  function inZone(x, owner) {
+  // On a portrait screen (a phone held upright) touch play splits the players top/bottom:
+  // Player 1 gets the top half, Player 2 the bottom. Camera play stays left/right, since
+  // the players stand side by side in front of the camera.
+  const stacked = () => versus() && mode !== 'camera' && H > W;
+  // Is (x, y) on the given player's side of the barrier (not on the barrier itself)?
+  function inZone(x, y, owner) {
     if (!versus()) return true;
-    return owner === 1 ? x < W / 2 - barrierHalf() : x > W / 2 + barrierHalf();
+    const v = stacked() ? y : x, mid = (stacked() ? H : W) / 2;
+    return owner === 1 ? v < mid - barrierHalf() : v > mid + barrierHalf();
   }
-  const ownerAt = (x) => (versus() ? (x < W / 2 ? 1 : 2) : 1);
+  const ownerAt = (x, y) => (!versus() ? 1 : (stacked() ? y < H / 2 : x < W / 2) ? 1 : 2);
   function cakeOf(owner) {
-    return versus() ? { x: W * (owner === 1 ? .25 : .75), y: H / 2, R: 42 * U } : { x: W / 2, y: H / 2, R: 52 * U };
+    if (!versus()) return { x: W / 2, y: H / 2, R: 52 * U };
+    const f = owner === 1 ? .25 : .75;
+    return stacked() ? { x: W / 2, y: H * f, R: 42 * U } : { x: W * f, y: H / 2, R: 42 * U };
   }
 
   // ---------- audio ----------
@@ -511,6 +527,10 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
   async function startCamera() {
     readSetup();
     ensureAudio();
+    // iPhones only allow music that is started straight from a tap; the camera and hand model
+    // load first, so unlock the music now (and pause it) so it can start when the round begins.
+    const p = bgm.play();
+    if (p && p.then) p.then(() => { if (!mode) bgm.pause(); }).catch(() => {});
     setMsg('Say cheese…');
     el.btnCam.disabled = el.btnMouse.disabled = true;
     try {
@@ -572,7 +592,7 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
     const byOwner = { 1: [], 2: [] };
     for (const lms of handResults) {
       const pts = lms.map((lm) => toScreen(lm, vr));
-      const owner = ownerAt(pts[0].x);
+      const owner = ownerAt(pts[0].x, pts[0].y);
       const span = Math.hypot(pts[9].x - pts[0].x, pts[9].y - pts[0].y);
       const h = { lms, pts, owner, span, active: false, tip: null };
       byOwner[owner].push(h);
@@ -592,7 +612,7 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
       }
       const t = pick.pts[INDEX_TIP];
       pick.active = true;
-      pick.tip = { x: t.x, y: t.y, r: TIP_R * U, owner, blocked: !inZone(t.x, owner) };
+      pick.tip = { x: t.x, y: t.y, r: TIP_R * U, owner, blocked: !inZone(t.x, t.y, owner) };
       lastTip[owner] = { x: t.x, y: t.y, t: now };
     }
   }
@@ -600,14 +620,15 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
   function getPoints(now) {
     if (mode === 'camera') return hands.filter((h) => h.active && !h.tip.blocked).map((h) => h.tip);
     stomps = stomps.filter((s) => s.until > now || held.has(s.id));
-    return stomps.filter((s) => s.until > now && inZone(s.x, s.owner)).map((s) => ({ x: s.x, y: s.y, r: 46 * U, owner: s.owner }));
+    return stomps.filter((s) => s.until > now && inZone(s.x, s.y, s.owner)).map((s) => ({ x: s.x, y: s.y, r: 46 * U, owner: s.owner }));
   }
 
   // ---------- pointer (mouse / touch): tap your own half of the screen ----------
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());   // long-press on phones
   canvas.addEventListener('pointerdown', (e) => {
     if (mode !== 'mouse') return;
     ensureAudio();
-    const s = { id: e.pointerId, x: e.clientX, y: e.clientY, owner: ownerAt(e.clientX), until: performance.now() + 140 };
+    const s = { id: e.pointerId, x: e.clientX, y: e.clientY, owner: ownerAt(e.clientX, e.clientY), until: performance.now() + 140 };
     held.set(e.pointerId, s); stomps.push(s);
     hover.x = e.clientX; hover.y = e.clientY; hover.seen = true;
   });
@@ -689,11 +710,19 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
   function spawnAnt(owner, type, edge, u) {
     const T = TYPES[type], m = 40 * U, RW = versus() ? W / 2 : W;
     let x, y;
-    if (edge === 0) { x = u * RW; y = -m; }
-    else if (edge === 1) { x = u * RW; y = H + m; }
-    else if (edge === 2) { x = -m; y = u * H; }
-    else { x = W + m; y = u * H; }
-    if (owner === 2) x = W - x;
+    if (stacked()) {                                      // top half: in from the top, left or right edge
+      const RH = H / 2;
+      if (edge === 0) { x = u * W; y = -m; }
+      else if (edge === 1) { x = -m; y = u * RH; }
+      else { x = W + m; y = u * RH; }
+      if (owner === 2) y = H - y;
+    } else {
+      if (edge === 0) { x = u * RW; y = -m; }
+      else if (edge === 1) { x = u * RW; y = H + m; }
+      else if (edge === 2) { x = -m; y = u * H; }
+      else { x = W + m; y = u * H; }
+      if (owner === 2) x = W - x;
+    }
     const c = cakeOf(owner);
     let face = null;
     if (headMode !== 'classic') { const ok = faceDefs[headMode][type].filter(loaded); if (ok.length) face = pick(ok); }
@@ -710,9 +739,10 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
   const OWNER_COLOR = { 0: '#FFFFFF', 1: '#7FB0FF', 2: '#FFD75A' };
   function announce(text, owner) {
     owner = owner || 0;
-    const x = versus() && owner ? W * (owner === 1 ? .25 : .75) : W / 2;
-    const n = g.banners.filter((b) => Math.abs(b.x - x) < W * .2).length;
-    g.banners.push({ text, owner, x, y: H * .2 + n * 46 * U, age: 0, color: OWNER_COLOR[owner], tilt: (Math.random() - .5) * .12 });
+    const c = versus() && owner ? cakeOf(owner) : null;
+    const x = c ? c.x : W / 2, base = c && stacked() ? c.y - H * .13 : H * .2;
+    const n = g.banners.filter((b) => Math.abs(b.x - x) < W * .2 && Math.abs(b.base - base) < H * .2).length;
+    g.banners.push({ text, owner, x, base, y: base + n * 46 * U, age: 0, color: OWNER_COLOR[owner], tilt: (Math.random() - .5) * .12 });
     if (g.banners.length > 4) g.banners.shift();
   }
   function announceOnce(key, text, owner) {
@@ -780,7 +810,10 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
       a.y += Math.sin(a.angle) * a.sp * U * spd * dt;
       if (versus()) {                                   // ants can't cross the barrier
         const room = a.face ? a.faceR * 1.7 : a.rad;
-        if (a.owner === 1) a.x = Math.min(a.x, W / 2 - lim - room);
+        if (stacked()) {
+          if (a.owner === 1) a.y = Math.min(a.y, H / 2 - lim - room);
+          else a.y = Math.max(a.y, H / 2 + lim + room);
+        } else if (a.owner === 1) a.x = Math.min(a.x, W / 2 - lim - room);
         else a.x = Math.max(a.x, W / 2 + lim + room);
       }
       // panic when a finger gets close, small talk otherwise
@@ -865,22 +898,28 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
   // Each player's half gets a light colour wash, split by a hazard-tape barrier.
   function drawBarrier() {
     if (!versus()) return;
-    ctx.fillStyle = 'rgba(' + PLAYER[1].rgb + ',.10)'; ctx.fillRect(0, 0, W / 2, H);
-    ctx.fillStyle = 'rgba(' + PLAYER[2].rgb + ',.12)'; ctx.fillRect(W / 2, 0, W / 2, H);
-    const bw = BARRIER * U, x0 = W / 2 - bw / 2;
+    const st = stacked();
+    ctx.fillStyle = 'rgba(' + PLAYER[1].rgb + ',.10)'; st ? ctx.fillRect(0, 0, W, H / 2) : ctx.fillRect(0, 0, W / 2, H);
+    ctx.fillStyle = 'rgba(' + PLAYER[2].rgb + ',.12)'; st ? ctx.fillRect(0, H / 2, W, H / 2) : ctx.fillRect(W / 2, 0, W / 2, H);
+    // Drawn as a vertical band; for the top/bottom split the frame is turned 90° so it runs across.
+    const span = st ? H : W, len = st ? W : H;
+    const bw = BARRIER * U, x0 = span / 2 - bw / 2;
     ctx.save();
-    ctx.beginPath(); ctx.rect(x0, 0, bw, H); ctx.clip();
-    ctx.fillStyle = '#2B1B14'; ctx.fillRect(x0, 0, bw, H);
+    if (st) { ctx.translate(0, H); ctx.rotate(-Math.PI / 2); }
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x0, 0, bw, len); ctx.clip();
+    ctx.fillStyle = '#2B1B14'; ctx.fillRect(x0, 0, bw, len);
     ctx.fillStyle = '#FFC933';
     const s = bw * 1.1;
-    for (let y = -bw; y < H + bw; y += s * 2) {
+    for (let y = -bw; y < len + bw; y += s * 2) {
       ctx.beginPath();
       ctx.moveTo(x0, y + bw); ctx.lineTo(x0 + bw, y); ctx.lineTo(x0 + bw, y + s); ctx.lineTo(x0, y + s + bw);
       ctx.closePath(); ctx.fill();
     }
     ctx.restore();
     ctx.strokeStyle = '#2B1B14'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0, H); ctx.moveTo(x0 + bw, 0); ctx.lineTo(x0 + bw, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0, len); ctx.moveTo(x0 + bw, 0); ctx.lineTo(x0 + bw, len); ctx.stroke();
+    ctx.restore();
   }
 
   function drawCake(owner) {
@@ -1182,13 +1221,13 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
       }
     } else if (mode === 'mouse') {
       for (const s of stomps) {
-        if (s.until <= now || !inZone(s.x, s.owner)) continue;
+        if (s.until <= now || !inZone(s.x, s.y, s.owner)) continue;
         const P = PLAYER[s.owner];
         ctx.fillStyle = 'rgba(' + P.rgb + ',.38)'; ctx.strokeStyle = P.color; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.arc(s.x, s.y, 46 * U, 0, 6.283); ctx.fill(); ctx.stroke();
       }
       if (hover.seen && held.size === 0) {
-        const P = PLAYER[ownerAt(hover.x)];
+        const P = PLAYER[ownerAt(hover.x, hover.y)];
         ctx.strokeStyle = P.color; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
         ctx.beginPath(); ctx.arc(hover.x, hover.y, 46 * U, 0, 6.283); ctx.stroke(); ctx.setLineDash([]);
       }
@@ -1213,7 +1252,9 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
     for (const o of activeOwners()) {                           // red flash on the side that was bitten
       if (g.flash[o] <= 0) continue;
       ctx.fillStyle = 'rgba(215,38,61,' + (g.flash[o] * .5) + ')';
-      if (versus()) ctx.fillRect(o === 1 ? 0 : W / 2, 0, W / 2, H); else ctx.fillRect(0, 0, W, H);
+      if (stacked()) ctx.fillRect(0, o === 1 ? 0 : H / 2, W, H / 2);
+      else if (versus()) ctx.fillRect(o === 1 ? 0 : W / 2, 0, W / 2, H);
+      else ctx.fillRect(0, 0, W, H);
     }
   }
 
@@ -1283,7 +1324,7 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
       const pop = b.age < .18 ? .55 + (b.age / .18) * .6 : 1.15 - Math.min(.15, (b.age - .18) * .5);
       let size = 36 * U * pop;
       ctx.font = size + 'px "Paytone One", "Trebuchet MS", sans-serif';
-      const maxW = versus() && b.owner ? W * .46 : W * .92, w = ctx.measureText(b.text).width;
+      const maxW = versus() && b.owner && !stacked() ? W * .46 : W * .92, w = ctx.measureText(b.text).width;
       if (w > maxW) size *= maxW / w;
       ctx.save();
       ctx.globalAlpha = k > .75 ? 1 - (k - .75) / .25 : 1;
@@ -1295,13 +1336,14 @@ legend { font-weight: 800; padding: 0; margin-bottom: 6px; }
 
   function drawReady() {
     if (g.phase !== 'ready') return;
-    outlined(String(Math.ceil(g.readyT)), W / 2, H * .24, 120 * U);
+    const st = stacked();
+    outlined(String(Math.ceil(g.readyT)), W / 2, st ? H / 2 : H * .24, 120 * U);   // stacked: on the barrier, clear of both cakes
     if (versus()) {
-      const verb = mode === 'camera' ? 'Point your index finger' : 'Tap on this side';
+      const verb = mode === 'camera' ? 'Point your index finger' : st ? 'Tap your half' : 'Tap on this side';
       for (const p of [1, 2]) {
-        const x = W * (p === 1 ? .25 : .75);
-        badge(names[p], p, x, H * .72);
-        outlined(verb, x, H * .72 + 42 * U, Math.min(22 * U, W * .045));
+        const c = cakeOf(p), x = c.x, y = st ? c.y + c.R * 1.3 + 30 * U : H * .72;
+        badge(names[p], p, x, y);
+        outlined(verb, x, y + 42 * U, Math.min(22 * U, (st ? W * .07 : W * .045)));
       }
     } else {
       outlined(mode === 'camera' ? 'Point your index finger' : 'Click or tap to stomp', W / 2, H * .24 + 90 * U, 28 * U);
