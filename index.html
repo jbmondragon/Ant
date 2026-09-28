@@ -14,6 +14,10 @@
   --red: #D7263D;    /* warnings only: low timer, errors, cake bites */
   --blue: #0033A0;   /* theme: royal blue and gold */
   --gold: #FFC72C;
+  /* backdrop: faint gold dot grid over a soft blue glow that deepens to navy at the edges */
+  --backdrop:
+    radial-gradient(rgba(255,199,44,.16) 1.3px, transparent 1.8px) 0 0 / 30px 30px,
+    radial-gradient(120% 90% at 50% 38%, #0B47C4 0%, #0033A0 48%, #001B5E 100%);
   --ink: #2B1B14;
   --sun: #FFC72C;
   --white: #FFFFFF;
@@ -31,7 +35,7 @@ body { font-family: var(--body); font-size: 1.05rem; line-height: 1.5; color: va
 /* Picnic-blanket floor, also visible when playing without a camera */
 #stage {
   position: fixed; inset: 0; width: 100%; height: 100%; display: block;
-  background: var(--blue);
+  background: var(--backdrop);
   touch-action: none;
 }
 #confetti { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 30; pointer-events: none; }
@@ -89,7 +93,7 @@ body { font-family: var(--body); font-size: 1.05rem; line-height: 1.5; color: va
 /* ---------- overlays ---------- */
 .overlay { position: fixed; inset: 0; z-index: 10; display: flex; padding: 20px; overflow-y: auto; }
 .overlay > .card { margin: auto; }
-.overlay.gingham { background: var(--blue); }
+.overlay.gingham { background: var(--backdrop); background-attachment: fixed; }
 .overlay.dim { background: rgba(43,27,20,.55); }
 .card {
   background: var(--white); border: 4px solid var(--ink); border-radius: 24px;
